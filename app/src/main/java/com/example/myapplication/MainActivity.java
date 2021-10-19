@@ -1,11 +1,16 @@
 package com.example.myapplication;
 
+import android.content.Intent;
 import android.os.Bundle;
 
-import com.google.android.material.snackbar.Snackbar;
+import com.braintreepayments.api.BraintreeClient;
+import com.braintreepayments.api.BrowserSwitchResult;
+import com.braintreepayments.api.PayPalCheckoutRequest;
+import com.braintreepayments.api.PayPalClient;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import android.util.Log;
 import android.view.View;
 
 import androidx.navigation.NavController;
@@ -13,33 +18,27 @@ import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
 import androidx.navigation.ui.NavigationUI;
 
+import com.braintreepayments.api.dropin.DropInActivity;
+import com.braintreepayments.api.dropin.DropInRequest;
+import com.braintreepayments.api.dropin.DropInResult;
 import com.example.myapplication.databinding.ActivityMainBinding;
-import com.paypal.checkout.PayPalCheckout;
-import com.paypal.checkout.config.CheckoutConfig;
-import com.paypal.checkout.config.Environment;
-import com.paypal.checkout.createorder.CurrencyCode;
-import com.paypal.checkout.createorder.UserAction;
 
 import android.view.Menu;
 import android.view.MenuItem;
 
 public class MainActivity extends AppCompatActivity {
 
+    private static final int REQUEST_CODE = 7171;
     private AppBarConfiguration appBarConfiguration;
     private ActivityMainBinding binding;
+    private PayPalClient payPalClient;
+    private BraintreeClient braintreeClient;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        CheckoutConfig config = new CheckoutConfig(
-                this,
-                "ASjvaoZirsMUqtoiGPzf7WsDFYxT3HD5UveqNwT7wmJG5LiG_ugkQrFk0o2Ut6YyqTyfnJtiteOMw8hR",
-                Environment.SANDBOX,
-                String.format("%s://paypalpay", BuildConfig.APPLICATION_ID),
-                CurrencyCode.USD,
-                UserAction.PAY_NOW
-        );
-        PayPalCheckout.setConfig(config);
+        braintreeClient = new BraintreeClient(this, "ASjvaoZirsMUqtoiGPzf7WsDFYxT3HD5UveqNwT7wmJG5LiG_ugkQrFk0o2Ut6YyqTyfnJtiteOMw8hR");
+        payPalClient = new PayPalClient(braintreeClient);
         binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
@@ -52,8 +51,7 @@ public class MainActivity extends AppCompatActivity {
         binding.fab.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
+                myTokenizePayPalAccountWithCheckoutMethod();
             }
         });
     }
@@ -85,5 +83,45 @@ public class MainActivity extends AppCompatActivity {
         NavController navController = Navigation.findNavController(this, R.id.nav_host_fragment_content_main);
         return NavigationUI.navigateUp(navController, appBarConfiguration)
                 || super.onSupportNavigateUp();
+    }
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+        BrowserSwitchResult browserSwitchResult = braintreeClient.deliverBrowserSwitchResult(this);
+        Log.d("browserSwitchResult" ,"browserSwitchResult: " + browserSwitchResult);
+        if (browserSwitchResult != null) {
+            payPalClient.onBrowserSwitchResult(browserSwitchResult, (payPalAccountNonce, error) -> {
+                Log.d("PaypalData" ,"Data: " + payPalAccountNonce.getString());
+            });
+        }
+    }
+
+    protected void myTokenizePayPalAccountWithCheckoutMethod() {
+        PayPalCheckoutRequest request = new PayPalCheckoutRequest("1.00");
+        request.setCurrencyCode("USD");
+        payPalClient.tokenizePayPalAccount(this, request, (error) -> {
+            Log.d("tokenizePayPalAccount", "Iniside: " + error);
+        });
+    }
+    public void onBraintreeSubmit(View v) {
+        DropInRequest dropInRequest = new DropInRequest()
+                .tokenizationKey("k7vpgxgq9wdr5k3k");
+        startActivityForResult(dropInRequest.getIntent(this), REQUEST_CODE);
+    }
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                DropInResult result = data.getParcelableExtra(DropInResult.EXTRA_DROP_IN_RESULT);
+                // use the result to update your UI and send the payment method nonce to your server
+            } else if (resultCode == RESULT_CANCELED) {
+                // the user canceled
+            } else {
+                // handle errors here, an exception may be available in
+                Exception error = (Exception) data.getSerializableExtra(DropInActivity.EXTRA_ERROR);
+            }
+        }
     }
 }
